@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Data Collection Web Application" />
+    <meta name="author" content="Aleyna Kutuk" />
+    <title>Scene Sketch Data Collector</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- The core Firebase JS SDK is always required and must be listed first -->
+    <script src="https://www.gstatic.com/firebasejs/8.2.5/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.2.6/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.2.5/firebase-analytics.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.2.5/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.2.5/firebase-storage.js"></script>
+
+    <div class="row">
+      <div class="column-left"></div>
+      <div class="column-middle">
+        <h1 class="heading">Welcome to the Data Cleaning App</h1>
+        <br>
+        <div id="start-container">
+          <button href="#" type="button" class = "btn" id="submitBtn">START</button>
+        </div>
+      </div>
+      <div class = "column-right"></div>
+    </div>
+
+    <script>
+
+      document
+        .getElementById("submitBtn")
+        .addEventListener("click", function () {
+          window.location.href = "./label.html";
+        });
+      
+    </script>
+  </body>
+</html>
