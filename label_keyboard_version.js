@@ -15,12 +15,13 @@ firebase.initializeApp(firebaseConfig);
 let database = firebase.database();
 let usersRefInDatabase = database.ref("sceneData/");
 
+
 //Element retrieval
 let $ = function (id) { return document.getElementById(id) };
 let drawingModeEl = $('modeButton');
 
+var canvas = this.__canvas = new fabric.Canvas('canvas', {isDrawingMode: false});
 
-var canvas = this.__canvas = new fabric.Canvas('canvas', {isDrawingMode: true });
 var ctx = canvas.getContext("2d", { willReadFrequently: true });
 let brush = canvas.freeDrawingBrush;
 var shadow = new fabric.Shadow({ color: "red", blur: 8});
@@ -30,60 +31,130 @@ let canvasDiv = $("canvas");
 brush.color = rgbToHex(0, 0, 0);
 brush.width = 3;
 
+//disable user to move strokes on canvas
+fabric.Group.prototype.hasControls = false;
+fabric.Group.prototype.lockMovementX = true;
+fabric.Group.prototype.lockMovementY = true;
+fabric.Group.prototype.lockScalingX = true;
+fabric.Group.prototype.lockScalingY = true;
+fabric.Group.prototype.hasBorders = false;
+
 canvas.selectionColor = 'rgba(0,255,0,0.3)';
 canvas.selectionBorderColor = 'rgba(230, 126, 34, 1)';
 canvas.selectionLineWidth = 1;
 canvas.selectionShadow = shadow;
 
-var mouse = false;
-let mDown;
-let pDown;
 ctx.lineJoin = "round";
 ctx.lineCap = "round";
 var positionX, positionY;
 
-let user_data = [];
-let color_palette = {}; 
-let currentSceneIndex = 0;
+var user_data = [];
 let currentObjIndex = 1;
 let active_strokes = [];
 let labelled_obj_indices = [];
 let obj_divisions = [-1];  // keep last stroke indices
 let stroke_num = -1;
-getSceneData(currentObjIndex);
+let line_num = [0];
+
+var scene_infos = [];
+var obj_cnts = [];
+var curr_scene_id = -1;
+var tot_scene_cnt = 0;
+
+getSceneData();
 
 window.addEventListener("DOMContentLoaded", startup);
 
-function getSceneData(currentObjIndex) {
-  
-  var getPromise = usersRefInDatabase.once("value", function(snapshot) {
-    snapshot.forEach(function(childSnapshot) {
+function componentToHex(c) {
+    var hex = c.toString(16);
+    return hex.length == 1 ? "0" + hex : hex;
+}
 
+function rgbToHex(r, g, b) {
+    return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+}
+
+
+function getFirebaseData(){
+    
+  var getPromise = usersRefInDatabase.once("value", function(s) {
+    tot_scene_cnt = s.numChildren();
+    s.forEach(function(childSnapshot) {
       var scene_info = childSnapshot.child("scene_info").val();
-      let canvasObjects = canvas.getObjects();
-      var stroke = []; //should contain 3 array in it
-      var xCords = [];
-      var yCords = [];
-      for (let i = 0; i < scene_info.length; i++) {
-            var vec = scene_info[i]["drawing"];
-            stroke[0] = vec[0];
-            stroke[1] = vec[1];
-            
-            if (canvas.getObjects().length == 0) {
-                temp_stroke_vec = stroke;
-             } else {
+      var obj_cnt = childSnapshot.child("scene_info").numChildren();
+      scene_infos.push(scene_info);
+      obj_cnts.push(obj_cnt);
+    });
+  });
+}
+
+function getDrawing(strokes) {
+
+  var points = [];
+  line_num.push(line_num[line_num.length -1] + strokes[0].length - 1);
+  //define your points from 0 to width and from 0 to height
+  for(k =0; k < strokes[0].length; k++){
+     points.push({
+     x : (strokes[0][k]),
+     y : (strokes[1][k])
+     });
+  }
+  console.log(points);
+  //drow lines
+  for(i =0; i < points.length - 1; i++)
+  {
+      canvas.add(new fabric.Line([points[i].x, points[i].y, points[i+1].x, points[i+1].y], {
+            stroke: rgbToHex(211, 211, 211),
+            strokeWidth: 4
+         }));
+  }
+
+  canvas.renderAll();
+}
+
+
+function getSceneData() {
   
-              canvasObjects[canvas.getObjects().length - 1].vectorRepresentation = temp_stroke_vec;
-              temp_stroke_vec = stroke;
-             }
-
-            canvasObjects[canvas.getObjects().length - 1].vectorRepresentation = temp_stroke_vec;
-            temp_stroke_vec = stroke;
+  if (tot_scene_cnt == 0){
+     getFirebaseData();
+  }
+  else{
+    curr_scene_id += 1;
+    if (curr_scene_id == tot_scene_cnt){
+       console.log("Finished!!!!");
+    }
+    else{
+      deleteObjects();
+      var scene_info = scene_infos[curr_scene_id];
+      var obj_cnt = obj_cnts[curr_scene_id];
+  
+      for (let i = 0; i < obj_cnt; i++) {
+          var stroke = []; 
+          var vec = scene_info[i]["drawing"];
+          var label = scene_info[i]["labels"];
+          
+          for (let j = 0; j < vec.length; j++) {
+              stroke[j] = vec[j];
+              getDrawing(stroke[j]);
+          }
+          
+          canvas.set({vectorRepresentation: stroke});
+          canvas.renderAll();
       }
+    }   
 
-  });
-  });
+  }
+ 
+}
 
+function deleteObjects() {
+    canvas.forEachObject(function(obj){
+        if(obj.type === 'line'){
+            canvas.remove(obj);
+        }
+    });
+
+    canvas.renderAll();
 }
 
 function getRandomInt(min, max) {
@@ -108,13 +179,7 @@ const hex2rgb = (hex) => {
   return [r, g, b];
 }
 
-for (let i = 0; i < obj_classes.length; i++) {
-  let hexcolor = rgbToHex(getRandomInt(80,255), getRandomInt(80,255), getRandomInt(80,255));
-  color_palette[obj_classes[i]] = hexcolor;
-}
-
 function startup() {
-
   const el = $('canvas');
   el.addEventListener('touchstart', handleStart);
   el.addEventListener('touchmove', handleMove);
@@ -170,23 +235,6 @@ function handleCancel(evt) {
   evt.preventDefault();
 }      
 
-function showInstructions() {
-  
-  let instructions = ["First select the strokes of an object.",
-                      "To select strokes, use RIGHT ARROW.",
-                      "To unselect strokes, use LEFT ARROW.",
-                      "If a stroke is selected, it will appear black.",
-                      "After selecting the whole object, label it with the appropriate category name.",
-                      "You can choose from the list or create a new category name.",
-                      "Then, click the SUBMIT button.",
-                      "You can see your labelled object list on the right of the canvas."];
-  let message = "";
-  for (let i = 0; i < instructions.length; i++) {
-    message += "‣"+ instructions[i] + "<br><br>" ;
-  }
-  customAlert.alert(message);
-
-}
 
 // this function removes all selected strokes and turn them all grey color.
 function clearAllSelections() {
@@ -198,6 +246,7 @@ function clearAllSelections() {
         allObjects[i].set("stroke", stroke_color);
     }
     stroke_num = -1;
+    line_num = [0];
     user_data = [];
     active_strokes = [];
     labelled_obj_indices = [];
@@ -217,9 +266,11 @@ function undoLastSelection() {
     var prev_stroke_id = obj_divisions.at(-1);
     stroke_num = prev_stroke_id; // update stroke_num
     let stroke_cnt = last_stroke_id - prev_stroke_id;
+    console.log("last_stroke_id", last_stroke_id);
+    console.log("prev_stroke_id",prev_stroke_id);
 
-    for (let i=allObjects.length-1; i > prev_stroke_id; i--) {
-        allObjects[i].set("stroke", stroke_color);
+    for (let i = line_num[prev_stroke_id]; i > line_num[stroke_num]; i--) {
+      allObjects[i].set("stroke", stroke_color);
     }
     
     for (let i=0; i < stroke_cnt; i++) {
@@ -238,15 +289,15 @@ function undoLastSelection() {
 function moveSceneBackward() {
   const includesIdx = labelled_obj_indices.includes(stroke_num);
   if (stroke_num < -1){
-    customAlert.alert("You should click to RIGHT ARROW!!");
+    console.log("You should click to RIGHT ARROW!!");
     stroke_num = -1;
   }
   else if(stroke_num == -1)
   {
-    customAlert.alert("You should click to RIGHT ARROW!!");
+    console.log("You should click to RIGHT ARROW!!");
   }
   else if(includesIdx){
-    customAlert.alert("You cannot label an object twice, if you made a labeling mistake, please use CLEAR ALL or UNDO buttons !!");
+    console.log("You cannot label an object twice, if you made a labeling mistake, please use CLEAR ALL or UNDO buttons !!");
   }
   else{
     changeStrokeColor("grey");
@@ -257,9 +308,9 @@ function moveSceneBackward() {
 // this function triggers when you click RIGHT ARROW key.
 function moveSceneForward() {
     stroke_num += 1;
-    let allObjects = canvas.getObjects();
-    if (stroke_num >= allObjects.length){
-      customAlert.alert("No grey stroke left !!");
+    console.log(line_num.length -1);
+    if (stroke_num >= line_num.length -1){
+      console.log("No grey stroke left !!");
       stroke_num -= 1;
     }
     else{
@@ -275,14 +326,19 @@ function changeStrokeColor(stroke_color) {
 
     if (stroke_color == "grey"){
       let stroke_color = rgbToHex(211, 211, 211);
-      allObjects[stroke_num].set("stroke", stroke_color);
+      for (let i = line_num[stroke_num]; i < line_num[stroke_num+1]; i++) {
+        allObjects[i].set("stroke", stroke_color);
+      }
+      
     }
     else if(stroke_color == "black"){
       let stroke_color = rgbToHex(0, 0, 0);
-      allObjects[stroke_num].set("stroke", stroke_color);
+      for (let i = line_num[stroke_num]; i < line_num[stroke_num+1]; i++) {
+        allObjects[i].set("stroke", stroke_color);
+      }
     }
     canvas.renderAll();
-  }
+ }
 }
 
 // this function searches for the labelled object stroke indices.
@@ -352,7 +408,7 @@ function saveCategory(){
   let categoryname = $("categoryname");
 
   if(categoryname.value == "") {
-    customAlert.alert("You must select a category!")
+    console.log("You must select a category!")
   }
   else{
     findLabelledObject();
@@ -371,7 +427,7 @@ function saveCategory(){
        categoryname.value = "";
     }
     else{
-      customAlert.alert("You cannot label an object twice, if you made a labeling mistake, please use CLEAR or UNDO buttons !!");
+      console.log("You cannot label an object twice, if you made a labeling mistake, please use CLEAR or UNDO buttons !!");
     }
   } 
 } 
@@ -382,7 +438,7 @@ function saveOther() {
   let categoryname = $("labelname");
 
   if(categoryname.value == "") {
-    customAlert.alert("You must write a new category !!")
+    console.log("You must write a new category !!")
   }
   else{
     
@@ -405,7 +461,7 @@ function saveOther() {
   
     }
     else{
-      customAlert.alert("Use CLEAR ALL or UNDO buttons to correct your labeling mistake !!");
+      console.log("Use CLEAR ALL or UNDO buttons to correct your labeling mistake !!");
     }
 
   }
@@ -428,7 +484,7 @@ function saveIncomplete(){
        user_data.push(new_data);
     }
     active_strokes = [];
-  } 
+} 
 
 
 // this function triggers when you switch to the NEXT SCENE, saves the data to the firebase.
@@ -437,16 +493,15 @@ function nextSketch(){
   let objs = canvas.getObjects();
 
   if (labelled_obj_indices.length != objs.length){
-      customAlert.alert("Please label every objects !!");
+      console.log("Please label every objects !!");
   }
   else{
-      let currentScene = sceneDescriptions[currentSceneIndex];
-      document.getElementById("sceneDesc").innerHTML = sceneDescriptions[currentSceneIndex + 1];
+      
       let submit_content = { "user_email": email, "agreement": agreement, "scene_info": user_data, "scene_description": currentScene};
       console.log(user_data);
       usersRefInDatabase.push(submit_content, (error) => {
        if (error) {
-        customAlert.alert("Error while pushing data to the firebase.");
+        console.log("Error while pushing data to the firebase.");
        } else {
          console.log(submit_content);
          console.log("Data sent successfully!");
@@ -468,7 +523,7 @@ function nextSketch(){
       }
       else{
           stroke_num = -1;
-          getSceneData(currentObjIndex);
+          getSceneData();
       }
   }
 }
